@@ -29,7 +29,9 @@ class Objective(nn.Module):
         return self.emb(e)
 
     def forward(self, rep, expr):
-        return self.err(self.compose(expr), rep)
+        comp_fn = self.compose(expr)
+        orig_fn = rep
+        return self.err(self.compose(expr), rep), nn.functional.normalize(orig_fn).tolist(), nn.functional.normalize(comp_fn).tolist()
 
 def evaluate(reps, exprs, comp_fn, err_fn, quiet=False, steps=400, include_pred=False, zero_init=True):
     vocab = {}
@@ -46,29 +48,82 @@ def evaluate(reps, exprs, comp_fn, err_fn, quiet=False, steps=400, include_pred=
 
     treps = [torch.FloatTensor([r]) for r in reps]
     texprs = [index(e) for e in exprs]
+    # print(texprs[0])
+    # print(treps[0])
+    # print(len(treps))
+    # print(len(texprs))
+    #print(texprs[0].shape)
+    #print(treps[0].shape)
+    # print("------------DEBUG-----------")
+    # print("the decoder vals are " + str(reps[0]))
+    # print("the decoder vals tensors are " + str(treps[0]))
+    # print("the data vals are " + str(exprs[0]))
 
     obj = Objective(vocab, reps[0].size, comp_fn, err_fn, zero_init)
     opt = optim.RMSprop(obj.parameters(), lr=0.01)
 
-    for t in range(steps):
+    t = 0
+    prev_loss = 0
+    same_loss_counter = 0
+
+    while (t < steps and same_loss_counter < 5):
         opt.zero_grad()
-        errs = [obj(r, e) for r, e in zip(treps, texprs)]
+        errs = []
+        orig_fns = []
+        c_fns = []
+        for r, e in zip(treps, texprs):
+            err, orig_fn, c_fn = obj(r, e)
+            errs.append(err)
+            orig_fns.append(orig_fn)
+            c_fns.append(c_fn)
+        #errs = [obj(r, e) for r, e in zip(tmsgs, texprs)]
         loss = sum(errs)
+        if (loss == prev_loss):
+            same_loss_counter += 1
+        else:
+            same_loss_counter = 0
         loss.backward()
         if not quiet and t % 100 == 0:
             print(loss.item())
         opt.step()
+        t += 1
+        prev_loss = loss
+
+    print(t)
+    # for t in range(steps):
+    #     opt.zero_grad()
+    #     # errs = [obj(r, e) for r, e in zip(treps, texprs)]
+    #     errs = []
+    #     orig_fns = []
+    #     c_fns = []
+    #     for r, e in zip(treps, texprs):
+    #         err, orig_fn, c_fn = obj(r, e)
+    #         errs.append(err)
+    #         orig_fns.append(orig_fn)
+    #         c_fns.append(c_fn)
+    #     loss = sum(errs)
+    #     # print(obj.emb.weight.grad)
+    #     loss.backward()
+    #     if not quiet and t % 100 == 0:
+    #         print(loss.item())
+    #     opt.step()
 
     #for r, e in zip(treps, texprs):
     #    print(r, obj.compose(e))
     #assert False
     final_errs = [err.item() for err in errs]
-    if include_pred:
-        lexicon = {
-            k: obj.emb(torch.LongTensor([v])).data.cpu().numpy()
-            for k, v in vocab.items()
-        }
-        composed = [obj.compose(t) for t in texprs]
-        return final_errs, lexicon, composed
-    else:
-        return final_errs
+
+    print(c_fns)
+    print(orig_fns)
+
+    return final_errs
+    # print(final_errs)
+    # if include_pred:
+    #     lexicon = {
+    #         k: obj.emb(torch.LongTensor([v])).data.cpu().numpy()
+    #         for k, v in vocab.items()
+    #     }
+    #     composed = [obj.compose(t) for t in texprs]
+    #     return final_errs, lexicon, composed
+    # else:
+    #     return final_errs
