@@ -17,6 +17,7 @@ class Objective(nn.Module):
     def __init__(self, vocab, repr_size, comp_fn, err_fn, zero_init):
         super().__init__()
         self.emb = nn.Embedding(len(vocab), repr_size)
+        self.softmax = nn.Softmax(dim=1)
         if zero_init:
             self.emb.weight.data.zero_()
         self.comp = comp_fn
@@ -26,6 +27,7 @@ class Objective(nn.Module):
         if isinstance(e, tuple):
             args = (self.compose(ee) for ee in e)
             return self.comp(*args)
+        #return self.softmax(self.emb(e))
         return self.emb(e)
 
     def forward(self, rep, expr):
@@ -60,7 +62,7 @@ def evaluate(reps, exprs, comp_fn, err_fn, quiet=False, steps=400, include_pred=
     # print("the data vals are " + str(exprs[0]))
 
     obj = Objective(vocab, reps[0].size, comp_fn, err_fn, zero_init)
-    opt = optim.RMSprop(obj.parameters(), lr=0.01)
+    opt = optim.RMSprop(obj.parameters(), lr=0.00001)
 
     t = 0
     prev_loss = 0
@@ -82,14 +84,16 @@ def evaluate(reps, exprs, comp_fn, err_fn, quiet=False, steps=400, include_pred=
             same_loss_counter += 1
         else:
             same_loss_counter = 0
+        print(loss.grad)
         loss.backward()
-        if not quiet and t % 100 == 0:
+        print(loss.grad)
+        if t == 1 or t % 100 == 0:
             print(loss.item())
         opt.step()
         t += 1
         prev_loss = loss
 
-    print(t)
+
     # for t in range(steps):
     #     opt.zero_grad()
     #     # errs = [obj(r, e) for r, e in zip(treps, texprs)]
@@ -113,8 +117,10 @@ def evaluate(reps, exprs, comp_fn, err_fn, quiet=False, steps=400, include_pred=
     #assert False
     final_errs = [err.item() for err in errs]
 
-    print(c_fns)
-    print(orig_fns)
+    emb_vals = [obj.emb(torch.LongTensor([i])) for i in range(0,len(vocab))]
+    print(emb_vals)
+    # print(c_fns)
+    # print(orig_fns)
 
     return final_errs
     # print(final_errs)
